@@ -9,6 +9,7 @@ from .catalog import catalog, SOURCES
 from .storage import init_db, Observation, ProviderRun, Workspace, current_rows, persist, now
 from .providers import WorldBank, ECB, point
 from .analysis import analyze
+from .auth import install_auth, settings
 
 logging.basicConfig(level=logging.INFO)
 log=logging.getLogger("atlas")
@@ -17,9 +18,30 @@ refresh_lock=asyncio.Lock()
 
 @asynccontextmanager
 async def lifespan(app):
+ settings()
  yield
 
-app=FastAPI(title="ATLAS Research API",version="0.1.0",lifespan=lifespan)
+app=FastAPI(title="ATLAS Research API",version="0.1.0",lifespan=lifespan,docs_url=None,redoc_url=None)
+install_auth(app, lambda: Session)
+
+# Preserve authenticated API documentation with nonce-protected initialization.
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.responses import HTMLResponse
+import secrets
+
+def documentation_response(response):
+ nonce=secrets.token_urlsafe(24)
+ body=response.body.decode().replace("<script>",f'<script nonce="{nonce}">')
+ body=body.replace("SwaggerUIBundle({",'SwaggerUIBundle({requestInterceptor: (request) => {request.headers["X-ATLAS-CSRF"]="1"; return request;},')
+ return HTMLResponse(body,headers={"Content-Security-Policy":f"default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'nonce-{nonce}'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"})
+
+@app.get("/docs",include_in_schema=False)
+def swagger_docs():
+ return documentation_response(get_swagger_ui_html(openapi_url="/openapi.json",title="ATLAS API"))
+
+@app.get("/redoc",include_in_schema=False)
+def redoc_docs():
+ return documentation_response(get_redoc_html(openapi_url="/openapi.json",title="ATLAS API",with_google_fonts=False))
 
 def available(session):
  items={item["id"]:item for item in catalog()}
@@ -158,3 +180,10 @@ def export(series_id:str):
 def report(series_id:str):
  data=series(series_id)
  return {"title":data["metadata"]["name"],"generated_at":now(),"research_question":"Has the latest observation changed unusually relative to its trailing history?","summary":data["analysis"]["status"],"analysis":data["analysis"],"sources":list({r["source_url"] for r in data["observations"]}),"limitations":["Single-series descriptive research, not an investment recommendation.","Policy, fundamentals and historical scenario corroboration are not implemented."],"data":data["observations"]}
+
+# Production serves the built frontend from the same origin as the protected API.
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+frontend_dist=Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if frontend_dist.is_dir():
+ app.mount("/",StaticFiles(directory=frontend_dist,html=True),name="frontend")

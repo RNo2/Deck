@@ -1,7 +1,8 @@
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from sqlalchemy import create_engine, String, Float, Text, UniqueConstraint, select
+from sqlalchemy import create_engine, String, Float, Text, Integer, UniqueConstraint, select
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 class Base(DeclarativeBase): pass
@@ -34,13 +35,41 @@ class Workspace(Base):
  series_ids: Mapped[str]=mapped_column(Text)
 
 def now(): return datetime.now(timezone.utc).isoformat()
-def init_db(url=None):
- if url is None:
+def database_url(url=None):
+ url=url or os.environ.get("DATABASE_URL")
+ if not url:
   directory=Path(os.environ.get("ATLAS_DATA_DIR", "var")); directory.mkdir(parents=True,exist_ok=True)
   url=f"sqlite:///{directory / 'atlas.db'}"
- engine=create_engine(url,connect_args={"check_same_thread":False})
- Base.metadata.create_all(engine)
+ if url.startswith("postgres://"): url="postgresql+psycopg://"+url[len("postgres://"):]
+ elif url.startswith("postgresql://"): url="postgresql+psycopg://"+url[len("postgresql://"):]
+ return url
+
+def make_engine(url=None):
+ url=database_url(url)
+ if (os.environ.get("ATLAS_ENV")=="production" or os.environ.get("RENDER")) and make_url(url).query.get("sslmode")!="verify-full":
+  raise RuntimeError("Production DATABASE_URL requires sslmode=verify-full for verified TLS")
+ connect_args={"check_same_thread":False} if url.startswith("sqlite:") else {}
+ if url.startswith("postgresql") and make_url(url).query.get("sslmode")=="verify-full" and "sslrootcert" not in make_url(url).query:
+  connect_args["sslrootcert"]="system"
+ return create_engine(url, pool_pre_ping=True, connect_args=connect_args, hide_parameters=True)
+
+def init_db(url=None):
+ from .migrate import upgrade
+ engine=make_engine(url)
+ upgrade(engine)
  return sessionmaker(engine,expire_on_commit=False)
+
+class LoginSession(Base):
+ __tablename__="login_sessions"
+ token_hash: Mapped[str]=mapped_column(String(64),primary_key=True)
+ expires: Mapped[int]=mapped_column(Integer)
+ credential_tag: Mapped[str]=mapped_column(String(64))
+
+class LoginThrottle(Base):
+ __tablename__="login_throttle"
+ id: Mapped[int]=mapped_column(primary_key=True)
+ failures: Mapped[int]=mapped_column(Integer)
+ window_start: Mapped[int]=mapped_column(Integer)
 
 def current_rows(session, series_id):
  rows=session.scalars(select(Observation).where(Observation.series_id==series_id).order_by(Observation.retrieved_at,Observation.id)).all()

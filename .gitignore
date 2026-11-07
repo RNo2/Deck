@@ -35,3 +35,18 @@ id_ecdsa
 id_ecdsa.*
 id_ed25519
 id_ed25519.*
+.neon
+
+# Local databases, credentials, and generated agent tooling
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+.neon-cli/
+.cache/
+profiles.json
+tokens.json
+.agents/skills/
+skills-lock.json

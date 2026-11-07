@@ -6,6 +6,8 @@ Local-first macroeconomic research terminal. Free/open-source software, with no 
 
 Prerequisites: Python 3.12 and Node.js 22.12+ (Node 24 tested).
 
+Install dependencies first, then configure `ATLAS_USERNAME`, `ATLAS_PASSWORD_HASH` and `APP_ORIGIN` before starting Uvicorn. Generate a hash privately after installing dependencies with `PYTHONPATH=backend .venv/bin/python -m atlas.auth`. See [.env.example](.env.example) for variable names (files are not loaded automatically). Missing login configuration stops startup. SQLite remains the default when `DATABASE_URL` is unset.
+
 ```sh
 python -m venv .venv
 .venv/bin/pip install -r backend/requirements.lock.txt
@@ -15,7 +17,9 @@ cd ..
 .venv/bin/uvicorn atlas.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-In another terminal, from `frontend`, run `npm run dev`. Vite proxies `/api` to the backend. For a production bundle use `npm run build`, then `npm run preview`. The backend API has interactive documentation at `/docs` on its local port. This local single-user application has no authentication: do not expose its API to an untrusted network.
+In another terminal, from `frontend`, run `npm run dev`. Vite proxies `/api` to the backend. For a production bundle use `npm run build`, then `npm run preview`. The backend API has interactive documentation at `/docs` on its local port. Sign in at `/auth/login`. Built frontend files can also be served directly by FastAPI after `npm run build`; set `APP_ORIGIN` to the origin you actually access. The initial app supports one user, with database-backed revocable sessions and CSRF protection.
+
+For prepared Render + Neon configuration, migrations, data transfer and secret setup, see [deployment instructions](docs/deployment.md). No deployment has been performed.
 
 Click **Refresh intelligence** to retrieve available World Bank and ECB observations. No generated or sample financial records are loaded. A network failure is recorded in **Data sources & coverage**. An empty database is an honest empty state, not evidence that macroeconomic conditions are normal.
 
@@ -67,7 +71,7 @@ A latest observation is compared with the preceding 20 daily or 10 other observa
 
 World Bank annual observations are represented by year-end dates for their reference year; these are **not release dates**. Requests exclude the current incomplete calendar year. ECB observations are delayed business-day reference rates, not executable quotes. Imported frequency is a user declaration; calendar regularity is not verified. Missing periods are not filled. Current-vintage observations can contain revisions: retrieval vintages are retained from the time ATLAS first sees them, but original publication vintages are unavailable. Do not use these data for point-in-time backtesting.
 
-No policy/news events, supply-demand balance engine, technical indicator suite, cross-market corroboration, matched historical scenarios, scheduled jobs, alerts or comprehensive research reports are implemented yet. Watchlists support saved series combinations and deletion, but editing/organization and saved filter configurations are pending. The architecture is modular, but production migrations, multi-user authorization and DuckDB/Parquet storage are not implemented.
+No policy/news events, supply-demand balance engine, technical indicator suite, cross-market corroboration, matched historical scenarios, scheduled jobs, alerts or comprehensive research reports are implemented yet. Watchlists support saved series combinations and deletion, but editing/organization and saved filter configurations are pending. The architecture is modular, but versioned schema migrations and single-user authentication are implemented, while multi-user authorization and DuckDB/Parquet storage remain future work.
 
 ## Data and backup
 

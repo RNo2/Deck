@@ -1,5 +1,3 @@
-import os
-os.environ['ATLAS_DATA_DIR']='/tmp/atlas-test-default'
 from types import SimpleNamespace
 import asyncio
 import httpx
@@ -14,7 +12,10 @@ from atlas.analysis import analyze
 @pytest.fixture
 def client(tmp_path, monkeypatch):
  monkeypatch.setattr(main,'Session',init_db(f'sqlite:///{tmp_path}/test.db'))
- with TestClient(main.app) as c: yield c
+ with TestClient(main.app,headers={"X-ATLAS-CSRF":"1"}) as c:
+  response=c.post('/auth/login',data={"username":"tester","password":"test-password-long"},headers={"Origin":"http://127.0.0.1:5173"},follow_redirects=False)
+  assert response.status_code==303
+  yield c
 
 def payload(**overrides):
  return dict(name='Test research',source_url='https://example.org/observations',unit='index',geography='Test',frequency='monthly',csv_text='date,value\n2020-01-01,1\n2020-02-01,2\n',**overrides)
