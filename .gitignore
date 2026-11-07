@@ -1,0 +1,37 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+var/
+node_modules/
+dist/
+*.log
+*.tsbuildinfo
+.npm-cache/
+
+# Local environment configuration (keep a sanitized example commit-ready)
+.env
+.env.*
+!.env.example
+
+# Credentials, secrets and private keys
+secrets/
+.secrets/
+credentials/
+credentials.json
+credentials.*.json
+service-account*.json
+*.secrets.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+id_rsa
+id_rsa.*
+id_dsa
+id_dsa.*
+id_ecdsa
+id_ecdsa.*
+id_ed25519
+id_ed25519.*
