@@ -1,7 +1,8 @@
 import os
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
-from sqlalchemy import create_engine, String, Float, Text, Integer, UniqueConstraint, select
+from sqlalchemy import create_engine, String, Float, Text, Integer, UniqueConstraint, select, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -51,7 +52,23 @@ def make_engine(url=None):
  connect_args={"check_same_thread":False} if url.startswith("sqlite:") else {}
  if url.startswith("postgresql") and make_url(url).query.get("sslmode")=="verify-full" and "sslrootcert" not in make_url(url).query:
   connect_args["sslrootcert"]="system"
- return create_engine(url, pool_pre_ping=True, connect_args=connect_args, hide_parameters=True)
+ engine=create_engine(url, pool_pre_ping=True, connect_args=connect_args, hide_parameters=True)
+ if engine.dialect.name=="postgresql":
+  @event.listens_for(engine, "do_connect")
+  def use_ipv4(dialect, connection_record, cargs, cparams):
+   # Resolve on every physical connection, including pool reconnects after DNS changes.
+   # Keep host untouched: libpq uses it for SNI and verify-full certificate checks.
+   host=cparams.get("host")
+   if not host:
+    raise RuntimeError("PostgreSQL IPv4 connections require a database hostname")
+   try:
+    addresses=socket.getaddrinfo(host,cparams.get("port",5432),socket.AF_INET,socket.SOCK_STREAM)
+   except socket.gaierror:
+    raise RuntimeError("PostgreSQL hostname IPv4 resolution failed") from None
+   if not addresses:
+    raise RuntimeError("PostgreSQL hostname has no IPv4 addresses")
+   cparams["hostaddr"]=addresses[0][4][0]
+ return engine
 
 def init_db(url=None):
  from .migrate import upgrade
