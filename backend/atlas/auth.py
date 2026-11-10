@@ -20,16 +20,46 @@ def hash_password(password):
  digest=hashlib.scrypt(password.encode(),salt=salt,n=32768,r=8,p=3,maxmem=64*1024*1024)
  return "scrypt$"+base64.b64encode(salt).decode()+"$"+base64.b64encode(digest).decode()
 
+def parse_password_hash(value):
+ # Only surrounding environment-value whitespace is normalized. Never trim passwords.
+ # Error messages are fixed codes: no supplied values, hashes or decoded bytes.
+ if value is None:
+  raise ValueError("missing")
+ if not isinstance(value,str):
+  raise ValueError("expected_string")
+ value=value.strip()
+ if not value:
+  raise ValueError("empty_or_whitespace")
+ if value.startswith(("'",'"')) or value.endswith(("'",'"')):
+  raise ValueError("surrounding_quotes_remove_quotes")
+ parts=value.split("$")
+ if len(parts)!=3:
+  raise ValueError("expected_scrypt_dollar_base64salt_dollar_base64digest")
+ kind,salt,digest=parts
+ if kind!="scrypt":
+  raise ValueError("algorithm_must_be_scrypt")
+ decoded=[]
+ for name,encoded,size in (("salt",salt,16),("digest",digest,64)):
+  try:
+   raw=base64.b64decode(encoded,validate=True)
+  except (ValueError,TypeError):
+   raise ValueError(name+"_invalid_standard_base64") from None
+  if len(raw)!=size:
+   raise ValueError(name+"_must_decode_to_"+str(size)+"_bytes")
+  decoded.append(raw)
+ return decoded[0],decoded[1]
+
 def valid_hash(value):
  try:
-  kind,salt,digest=value.split("$")
-  return kind=="scrypt" and len(base64.b64decode(salt,validate=True))==16 and len(base64.b64decode(digest,validate=True))==64
- except (ValueError,TypeError): return False
+  parse_password_hash(value)
+  return True
+ except ValueError:
+  return False
 
 def verify_password(password, encoded):
- _,salt,digest=encoded.split("$")
- actual=hashlib.scrypt(password.encode(),salt=base64.b64decode(salt),n=32768,r=8,p=3,maxmem=64*1024*1024)
- return hmac.compare_digest(actual,base64.b64decode(digest))
+ salt,digest=parse_password_hash(encoded)
+ actual=hashlib.scrypt(password.encode(),salt=salt,n=32768,r=8,p=3,maxmem=64*1024*1024)
+ return hmac.compare_digest(actual,digest)
 
 def settings():
  origin=os.environ.get("APP_ORIGIN", "http://127.0.0.1:5173").rstrip("/")
@@ -39,10 +69,19 @@ def settings():
  production=os.environ.get("ATLAS_ENV")=="production" or bool(os.environ.get("RENDER"))
  if production and (parsed.scheme!="https" or not os.environ.get("DATABASE_URL","").startswith(("postgres://","postgresql://","postgresql+psycopg://"))):
   raise RuntimeError("Production requires HTTPS APP_ORIGIN and PostgreSQL DATABASE_URL")
- username=os.environ.get("ATLAS_USERNAME","")
- password_hash=os.environ.get("ATLAS_PASSWORD_HASH","")
- if not username or not valid_hash(password_hash):
-  raise RuntimeError("Set ATLAS_USERNAME and a valid ATLAS_PASSWORD_HASH before starting ATLAS")
+ username_raw=os.environ.get("ATLAS_USERNAME")
+ password_hash_raw=os.environ.get("ATLAS_PASSWORD_HASH")
+ username=(username_raw or "").strip()
+ password_hash=(password_hash_raw or "").strip()
+ issues=[]
+ if not username:
+  issues.append("ATLAS_USERNAME: "+("missing" if username_raw is None else "empty_or_whitespace"))
+ try:
+  parse_password_hash(password_hash_raw)
+ except ValueError as exc:
+  issues.append("ATLAS_PASSWORD_HASH: "+str(exc))
+ if issues:
+  raise RuntimeError("Invalid ATLAS login configuration: "+"; ".join(issues)) from None
  return origin,username,password_hash
 
 def digest(token): return hashlib.sha256(token.encode()).hexdigest()
