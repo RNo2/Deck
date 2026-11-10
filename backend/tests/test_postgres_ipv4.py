@@ -1,5 +1,6 @@
 """Exercise the physical DBAPI connection hook without contacting a database."""
 import socket
+import certifi
 from unittest.mock import Mock
 import pytest
 from atlas.storage import make_engine
@@ -21,6 +22,7 @@ def address(ip):
 
 
 def test_ipv4_connection_preserves_hostname_tls_and_credentials(monkeypatch):
+    monkeypatch.delenv('PGSSLROOTCERT', raising=False)
     engine, connect = postgres_engine(monkeypatch)
     resolve = Mock(return_value=[address('192.0.2.10'), address('192.0.2.11')])
     monkeypatch.setattr(socket, 'getaddrinfo', resolve)
@@ -32,7 +34,7 @@ def test_ipv4_connection_preserves_hostname_tls_and_credentials(monkeypatch):
         assert params['hostaddr'] == '192.0.2.10'
         assert params['host'] == 'db.example'
         assert params['sslmode'] == 'verify-full'
-        assert params['sslrootcert'] == 'system'
+        assert params['sslrootcert'] == certifi.where()
         assert params['user'] == 'fixture-user'
         assert params['password'] == 'fixture-password'
         assert params['dbname'] == 'fixture-db'
@@ -96,5 +98,35 @@ def test_sqlite_never_resolves_or_changes_connection_behavior(monkeypatch):
         with engine.connect() as connection:
             assert connection.exec_driver_sql('SELECT 1').scalar() == 1
         resolve.assert_not_called()
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize('query,env_ca,expected', [
+    ('sslmode=verify-full', None, '/certifi-test/cacert.pem'),
+    ('sslmode=verify-full', '/environment/roots.pem', '/environment/roots.pem'),
+    ('sslmode=verify-full&sslrootcert=/explicit/roots.pem', '/environment/roots.pem', '/explicit/roots.pem'),
+])
+def test_ca_bundle_precedence_with_ipv4_and_hostname_verification(monkeypatch, query, env_ca, expected):
+    if env_ca is None:
+        monkeypatch.delenv('PGSSLROOTCERT', raising=False)
+    else:
+        monkeypatch.setenv('PGSSLROOTCERT', env_ca)
+    where=Mock(return_value='/certifi-test/cacert.pem')
+    monkeypatch.setattr(certifi, 'where', where)
+    engine, connect = postgres_engine(monkeypatch, query)
+    monkeypatch.setattr(socket, 'getaddrinfo', Mock(return_value=[address('192.0.2.10')]))
+    try:
+        with pytest.raises(ConnectionCaptured):
+            engine.connect()
+        params=connect.call_args.kwargs
+        assert params['sslrootcert']==expected
+        assert params['sslmode']=='verify-full'
+        assert params['host']=='db.example'
+        assert params['hostaddr']=='192.0.2.10'
+        if env_ca is not None:
+            where.assert_not_called()
+        else:
+            where.assert_called_once_with()
     finally:
         engine.dispose()

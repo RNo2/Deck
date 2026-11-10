@@ -1,5 +1,6 @@
 import os
 import socket
+import certifi
 from datetime import datetime, timezone
 from pathlib import Path
 from sqlalchemy import create_engine, String, Float, Text, Integer, UniqueConstraint, select, event
@@ -51,7 +52,7 @@ def make_engine(url=None):
   raise RuntimeError("Production DATABASE_URL requires sslmode=verify-full for verified TLS")
  connect_args={"check_same_thread":False} if url.startswith("sqlite:") else {}
  if url.startswith("postgresql") and make_url(url).query.get("sslmode")=="verify-full" and "sslrootcert" not in make_url(url).query:
-  connect_args["sslrootcert"]="system"
+  connect_args["sslrootcert"]=os.environ.get("PGSSLROOTCERT") or certifi.where()
  engine=create_engine(url, pool_pre_ping=True, connect_args=connect_args, hide_parameters=True)
  if engine.dialect.name=="postgresql":
   @event.listens_for(engine, "do_connect")
