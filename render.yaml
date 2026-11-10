@@ -5,7 +5,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r backend/requirements.lock.txt && npm ci --prefix frontend --no-audit --no-fund && npm run build --prefix frontend
-    startCommand: PYTHONPATH=backend python -m atlas.migrate && python -m uvicorn atlas.main:app --app-dir backend --host 0.0.0.0 --port $PORT --workers 1
+    startCommand: PYTHONPATH=backend python -m atlas.network_diagnostic; PYTHONPATH=backend python -m atlas.migrate && python -m uvicorn atlas.main:app --app-dir backend --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /api/health
     autoDeploy: false
     envVars:

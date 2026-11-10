@@ -46,3 +46,11 @@ This opt-in utility copies all observation vintages and provenance columns, watc
 Persistent PostgreSQL storage protects against ordinary service restarts, not accidental deletion or provider/account loss. Arrange and test external PostgreSQL backups (for example, `pg_dump` using environment-supplied connection credentials). Check Neon's current free restore/retention limits; do not assume indefinite backups or unlimited storage.
 
 After a separately authorized deployment, verify: unauthenticated API requests return 401; login redirects to ATLAS; charts and reports load; a watchlist and representative observations survive restart; logout revokes access; and cross-origin writes fail. `/api/health` alone does not validate the authenticated workflow or external providers. Live Render/Neon TLS and account configuration must be checked there; local tests cannot establish hosted readiness.
+
+## Temporary Render network diagnostic
+
+Render's startup command runs `PYTHONPATH=backend python -m atlas.network_diagnostic` before Alembic. It reads only the host/port from `DATABASE_URL` (default port 5432), resolves IPv4 and IPv6 separately, and attempts a TCP connection to each returned address with a three-second connect timeout. A subprocess bounds the complete diagnostic to 25 seconds, including DNS resolution.
+
+Logs contain JSON events tagged `postgres_network`, address families, resolved IP addresses, ports, and sanitized status/error codes. They never contain the URL, username, password, database name, query parameters or raw exception text. The probe performs no database login, SQL, TLS negotiation, data transfer or address substitution. A reachable TCP port does not prove successful TLS or authentication. Diagnostic failures are advisory; migrations retain their existing success/failure behavior.
+
+This diagnostic is temporary. After the next separately authorized deployment, use its Render runtime logs to establish DNS and routing behavior before changing connection configuration. Remove the diagnostic module and its startup invocation once the connectivity issue is resolved. The Blueprint retains `autoDeploy: false`; this diagnostic runs no deployment commands.
