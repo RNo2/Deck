@@ -101,7 +101,13 @@ def test_refresh_access_denial_visible_and_cooldown(client,monkeypatch):
   raise httpx.HTTPStatusError('blocked',request=req,response=httpx.Response(403,request=req))
  monkeypatch.setattr(WorldBank,'fetch',denied);monkeypatch.setattr(ECB,'fetch',denied)
  result=client.post('/api/refresh')
- assert result.status_code==200
- assert all(p['status']=='unavailable' for p in result.json())
+ assert result.status_code==202
+ import time
+ for _ in range(100):
+  status=client.get('/api/refresh').json()
+  if status['status'] not in ('queued','running'):break
+  time.sleep(.02)
+ assert status['status']=='failed'
+ assert all(p['status']=='unavailable' for p in client.get('/api/coverage').json() if p['id']!='csv')
  assert client.get('/api/discovery').json()==[]
  assert client.post('/api/refresh').status_code==429

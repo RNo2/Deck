@@ -1,5 +1,6 @@
 import asyncio, csv, io, math
-from datetime import date
+from datetime import date, datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Protocol
 import httpx
 from .catalog import INDICATORS
@@ -17,7 +18,17 @@ async def request(client, url, **kwargs):
   except (httpx.TimeoutException,httpx.NetworkError,httpx.HTTPStatusError) as exc:
    if isinstance(exc,httpx.HTTPStatusError) and exc.response.status_code not in (429,500,502,503,504): raise
    if attempt==2: raise
-   await asyncio.sleep(2**attempt)
+   delay=2**attempt
+   if isinstance(exc,httpx.HTTPStatusError) and exc.response.status_code in (429,503):
+    retry=exc.response.headers.get("Retry-After")
+    if retry:
+     try: delay=max(delay,float(retry))
+     except ValueError:
+      try: delay=max(delay,(parsedate_to_datetime(retry)-datetime.now(timezone.utc)).total_seconds())
+      except (ValueError,TypeError,OverflowError): pass
+     # Respect long cooldowns without occupying this bounded refresh or retrying early.
+     if delay>5: raise
+   await asyncio.sleep(delay)
 
 def point(series_id,day,value,url,provider,unit,frequency,geography,currency=None):
  number=float(value)

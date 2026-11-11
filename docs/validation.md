@@ -23,3 +23,11 @@ The environment was published with the required provider/documentation domains a
 - Chromium exercised the built React app served by FastAPI: sign-in, authenticated dashboard and API, sign-out, and revoked access; no browser runtime errors. Test credentials existed only in subprocess environment variables and tests used a separate temporary SQLite database.
 - The existing local application database was inspected read-only and retains **3,261 observations**. No live data transfer or cloud database connection was performed.
 - No Render deployment, Neon account/database provisioning, Git commit or push was performed. Real hosted TLS, account permissions, free-tier quotas and persistence across a hosted restart still require verification after a separately authorized deployment.
+
+## Hosted-ingestion milestone validation
+
+- Full suite: **76 passed**, including disposable local PostgreSQL integration. No production database was contacted. The existing Starlette/AnyIO deprecation warning remains.
+- Frontend TypeScript and production build passed; the existing bundle-size advisory remains.
+- Chromium verified authenticated background acceptance (202), visible progress, duplicate-button protection, recovery after browser reload, updated World Bank/ECB coverage, explicit cooldown reporting and mobile layout. Browser provider responses were synthetic fixtures isolated in a temporary database, not the application database.
+- Regression tests cover provider HTTP parsing through persistence, per-series/global timeouts, provider-specific 403/429 behavior, concurrent admission, SQLite progress serialization, startup/shutdown recovery, stale-worker fencing, all-or-nothing invalid batches and write rollback, deduplication/revision retention, provenance, and batched database reads. PostgreSQL tests include persisted ingestion results.
+- No live provider call from Render, data transfer, deployment or paid service operation was performed. Actual Render egress/provider availability still requires post-deployment verification. See [ingestion.md](ingestion.md).

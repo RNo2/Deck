@@ -14,12 +14,17 @@ from .auth import install_auth, settings
 logging.basicConfig(level=logging.INFO)
 log=logging.getLogger("atlas")
 Session=init_db()
-refresh_lock=asyncio.Lock()
+from .ingestion import IngestionService, RefreshRejected
+ingestion=IngestionService(lambda: Session)
 
 @asynccontextmanager
 async def lifespan(app):
  settings()
- yield
+ await ingestion.recover()
+ try:
+  yield
+ finally:
+  await ingestion.stop()
 
 app=FastAPI(title="ATLAS Research API",version="0.1.0",lifespan=lifespan,docs_url=None,redoc_url=None)
 install_auth(app, lambda: Session)
@@ -66,36 +71,21 @@ def coverage():
    results.append(dict(id=key,**source,status=run.status if run else "not checked",message=run.message if run else "Refresh to test provider availability",checked_at=run.checked_at if run else None,observations=len(rows),series=len({r.series_id for r in rows}),latest_observation=max((r.date for r in rows),default=None),last_retrieved=max((r.retrieved_at for r in rows),default=None)))
   return results
 
-@app.post("/api/refresh")
-async def refresh():
- if refresh_lock.locked(): raise HTTPException(409,"Refresh already running")
- async with refresh_lock:
-  with Session() as s:
-   previous=s.get(ProviderRun,"worldbank")
-   if previous and (datetime.now(timezone.utc)-datetime.fromisoformat(previous.checked_at)).total_seconds()<300:
-    raise HTTPException(429,"Providers were checked within five minutes. Stored results remain available.")
-  output=[]
-  async with httpx.AsyncClient(timeout=25,follow_redirects=True,headers={"User-Agent":"ATLAS-local-research/0.1"}) as client:
-   for key,provider in [("worldbank",WorldBank(client)),("ecb",ECB(client))]:
-    count=0; successful=0; errors=[]
-    for item in [c for c in catalog() if c["provider"]==key]:
-     try:
-      points=await provider.fetch(item["id"])
-      if not points: raise ValueError("No observations returned")
-      with Session() as s: count+=persist(s,points)
-      successful+=1
-     except Exception as exc:
-      log.warning("Provider %s failed: %s",key,type(exc).__name__)
-      errors.append(f"{item['id']}: {type(exc).__name__}")
-      # Stop on access failures; do not hammer blocked endpoints.
-      if isinstance(exc,httpx.ProxyError) or (isinstance(exc,httpx.HTTPStatusError) and exc.response.status_code in (401,403)): break
-     await asyncio.sleep(.2)
-    status="available" if not errors else ("partial" if successful else "unavailable")
-    message=f"{count} new or revised observations. "+("; ".join(errors[:3]) if errors else "Refresh completed.")
-    with Session() as s:
-     s.merge(ProviderRun(provider=key,checked_at=now(),status=status,message=message)); s.commit()
-    output.append({"provider":key,"status":status,"message":message})
-  return output
+class RefreshInput(BaseModel):
+ series_ids: list[str] | None=Field(default=None,max_length=100)
+
+@app.get("/api/refresh")
+async def refresh_status():
+ return await ingestion.status()
+
+@app.post("/api/refresh",status_code=202)
+async def refresh(body: RefreshInput | None=None):
+ try:
+  return await ingestion.start(body.series_ids if body else None)
+ except RefreshRejected as exc:
+  raise HTTPException(429,"Refresh cooldown active; stored data remains available.",headers={"Retry-After":str(exc.seconds)}) from None
+ except ValueError:
+  raise HTTPException(422,"Only configured provider series can be refreshed") from None
 
 @app.get("/api/series/{series_id:path}")
 def series(series_id: str):

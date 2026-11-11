@@ -11,7 +11,8 @@ Browser → Vite `/api` proxy → FastAPI → provider adapters / analytics → 
 - `migrate.py` / `backend/migrations`: Alembic schema upgrades preserving existing SQLite data.
 - `transfer.py`: opt-in, transaction-protected data transfer into an empty target, preserving every observation vintage.
 - `analysis.py`: trailing-only statistics and transparent priority decomposition.
-- `main.py`: orchestration, data validation and API. Refresh performs bounded sequential requests, records failures and retains existing observations.
+- `main.py`: validation and authenticated API.
+- `ingestion.py`: bounded background refresh, catalog-subset orchestration, durable job admission/progress, provider isolation and interruption recovery. Records failures and preserves existing observations.
 - `frontend/src/main.tsx`: research workflows, data coverage, chart, discovery and local reports.
 
 Python and Node toolchains and all selected libraries are free/open-source. Live ingestion was verified for World Bank (24 series, 861 observations) and ECB (8 series, 2,400 observations). These counts describe the verified run; future availability is not guaranteed. Source terms, coverage and freshness must still be assessed for each research use. World Bank and ECB adapters are selected for public, keyless endpoints; neither provides real-time trading quotes.

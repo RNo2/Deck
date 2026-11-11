@@ -104,7 +104,7 @@ def test_migrations_preserve_legacy_data_and_repeat(tmp_path):
   assert row['retrieved_at']=='original-timestamp'
   assert row['publication_date']=='2020-02-01'
   assert row['value']==3.2
-  assert c.scalar(text('select version_num from alembic_version'))=='0002'
+  assert c.scalar(text('select version_num from alembic_version'))=='0003'
 
 
 def test_transfer_preserves_all_vintages_and_refuses_overwrite(tmp_path):
@@ -152,6 +152,22 @@ def test_postgresql_migrations_transfer_and_authenticated_api(tmp_path,monkeypat
   w=c.post('/api/watchlists',json={'name':'Persistent','series_ids':['csv:postgres-test']}).json()
   assert c.get('/api/watchlists').json()[0]['id']==w['id']
   assert c.get('/api/report?series_id=csv:postgres-test').status_code==200
+ # Exercise durable ingestion against PostgreSQL, using controlled provider data.
+  from atlas import ingestion as ingestion_module
+  from atlas.catalog import catalog
+  class Provider:
+   def __init__(self,client):pass
+   async def fetch(self,sid):
+    item=next(i for i in catalog() if i['id']==sid)
+    host='api.worldbank.org' if item['provider']=='worldbank' else 'data-api.ecb.europa.eu'
+    return [point(sid,'2020-01-01',2,'https://'+host+'/source',item['provider'],item['unit'],item['frequency'],item['country'])]
+  monkeypatch.setattr(ingestion_module,'PROVIDERS',{'worldbank':Provider,'ecb':Provider})
+  assert c.post('/api/refresh',json={'series_ids':['ecb:USD','wb:BRA:FP.CPI.TOTL.ZG']}).status_code==202
+  for _ in range(100):
+   job=c.get('/api/refresh').json()
+   if job['status'] not in ('queued','running'):break
+   time.sleep(.02)
+  assert job['status']=='succeeded' and job['added']==2
  token=c.cookies.get(COOKIE)
  # Reinitialize the engine as a process restart would; data and sessions must remain.
  factory=init_db(target)

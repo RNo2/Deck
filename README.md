@@ -21,7 +21,7 @@ In another terminal, from `frontend`, run `npm run dev`. Vite proxies `/api` to 
 
 For prepared Render + Neon configuration, migrations, data transfer and secret setup, see [deployment instructions](docs/deployment.md). No deployment has been performed.
 
-Click **Refresh intelligence** to retrieve available World Bank and ECB observations. No generated or sample financial records are loaded. A network failure is recorded in **Data sources & coverage**. An empty database is an honest empty state, not evidence that macroeconomic conditions are normal.
+Click **Refresh intelligence** to start a bounded background retrieval of available World Bank and ECB observations. Progress and per-series errors appear immediately and survive browser reloads. See [hosted ingestion workflow](docs/ingestion.md) for budgets, status codes and hosted limitations. No generated or sample financial records are loaded. A network failure is recorded in **Data sources & coverage**. An empty database is an honest empty state, not evidence that macroeconomic conditions are normal.
 
 ### Cloud networking
 
@@ -38,7 +38,7 @@ These counts record the verified ingestion run, not guaranteed future coverage. 
 
 - React + TypeScript + Vite terminal, responsive dark interface and Recharts historical chart.
 - FastAPI, SQLAlchemy and SQLite; observation vintages retained when values change.
-- Provider protocol and World Bank WDI / ECB SDMX adapters, with timeouts, transient-error retries, sequential requests and refresh cooldown.
+- Provider protocol and World Bank WDI / ECB SDMX adapters, with persisted background progress, per-series/run budgets, isolated provider pipelines, transient-error retries and refresh cooldown.
 - Catalog: inflation, real GDP growth and exports/GDP across Brazil, China, India, South Africa, US, Germany, Japan and Mexico; eight EUR reference-rate crosses.
 - Per-observation source URL, retrieval timestamp, observation date, unit, geography, currency, frequency and revision-status metadata. Unknown publication dates stay null.
 - Trailing z-score, baseline OLS trend, conventional 95% slope interval, sample counts, source-linked tables, CSV export.

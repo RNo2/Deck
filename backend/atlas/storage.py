@@ -3,7 +3,7 @@ import socket
 import certifi
 from datetime import datetime, timezone
 from pathlib import Path
-from sqlalchemy import create_engine, String, Float, Text, Integer, UniqueConstraint, select, event
+from sqlalchemy import create_engine, String, Float, Text, Integer, UniqueConstraint, select, event, tuple_
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -94,11 +94,31 @@ def current_rows(session, series_id):
  latest={r.date:r for r in rows}
  return [latest[d] for d in sorted(latest)]
 
-def persist(session, points):
+def persist(session, points, commit=True):
+ # Fetch existing vintages in bounded batches instead of a network round trip per point.
+ keys=list(dict.fromkeys((p["series_id"],p["date"]) for p in points))
+ latest={}
+ for offset in range(0,len(keys),400):
+  rows=session.scalars(select(Observation).where(tuple_(Observation.series_id,Observation.date).in_(keys[offset:offset+400])).order_by(Observation.retrieved_at,Observation.id)).all()
+  for row in rows: latest[(row.series_id,row.date)]=row
  added=0
  for point in points:
-  prior=session.scalar(select(Observation).where(Observation.series_id==point["series_id"],Observation.date==point["date"]).order_by(Observation.retrieved_at.desc(),Observation.id.desc()).limit(1))
+  key=(point["series_id"],point["date"])
+  prior=latest.get(key)
   if prior and prior.value==point["value"] and prior.unit==point["unit"] and prior.source_url==point["source_url"]: continue
-  session.add(Observation(**point)); session.flush(); added+=1
- session.commit()
+  row=Observation(**point)
+  session.add(row);latest[key]=row;added+=1
+ session.flush()
+ if commit: session.commit()
  return added
+
+
+class IngestionJob(Base):
+ __tablename__="ingestion_job"
+ id: Mapped[int]=mapped_column(primary_key=True)
+ job_id: Mapped[str]=mapped_column(String)
+ status: Mapped[str]=mapped_column(String)
+ started_at: Mapped[float]=mapped_column(Float)
+ updated_at: Mapped[float]=mapped_column(Float)
+ deadline: Mapped[float]=mapped_column(Float)
+ payload: Mapped[str]=mapped_column(Text)
